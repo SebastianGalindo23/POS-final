@@ -1,10 +1,16 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
+using Newtonsoft.Json;
 using POS.Data;
 using POS.Models;
-using System.Linq;
-using System.Threading.Tasks;
-using System.Collections.Generic;
+using System.Reflection.Metadata;
+using QuestPDF.Fluent;
+using QuestPDF.Helpers;
+using QuestPDF.Infrastructure;
+using POS.DTO;
+
+
 
 namespace POS.Controllers
 {
@@ -17,7 +23,7 @@ namespace POS.Controllers
             _context = context;
         }
 
-        // Index: Muestra una lista de productos con opciones de filtrado y búsqueda
+
         public IActionResult Index(string? search, string? filter)
         {
             var productos = _context.Productos.AsQueryable();
@@ -45,12 +51,12 @@ namespace POS.Controllers
                     default:
                         break;
                 }
-            }
-
+            }   
             ViewBag.Clientes = _context.Clientes.ToList();
             var listaProductos = productos.ToList();
             return View(listaProductos);
         }
+
 
         // Verificar si una venta existe
         private bool VentaExists(int id)
@@ -58,83 +64,95 @@ namespace POS.Controllers
             return _context.Ventas.Any(e => e.VentaId == id);
         }
 
-        [HttpPost]
-        public async Task<IActionResult> CrearVenta(int clienteId, int empleadoId, List<int> productoIds, List<int> cantidades)
+
+        public async Task<IActionResult> CrearVenta([FromBody] VentasDTO ventaDto)
         {
-            if (clienteId <= 0 || empleadoId <= 0 || productoIds == null || cantidades == null || productoIds.Count != cantidades.Count)
+            if (ventaDto == null || ventaDto.Detalles == null || !ventaDto.Detalles.Any())
             {
-                return BadRequest("Datos inválidos");
+                Console.WriteLine("El carrito llegó vacío o es nulo.");
+                return BadRequest("Datos de la venta inválidos.");
             }
 
-            // Verificamos que el cliente exista
-            var cliente = await _context.Clientes.FindAsync(clienteId);
+            // Verificación si el ClienteId existe en la base de datos
+            var cliente = await _context.Clientes.FindAsync(ventaDto.ClienteId);
             if (cliente == null)
             {
-                return BadRequest("El cliente seleccionado no existe");
+                Console.WriteLine($"Cliente con ID {ventaDto.ClienteId} no encontrado.");
+                return BadRequest($"El cliente con ID {ventaDto.ClienteId} no existe.");
             }
 
-            // Verificamos que el empleado exista
-            var empleado = await _context.Empleados.FindAsync(empleadoId);
-            if (empleado == null)
+            // Obtener todos los productos necesarios antes de iniciar la transacción
+            var productos = await _context.Productos
+                                          .Where(p => ventaDto.Detalles.Select(d => d.ProductoId).Contains(p.Id))
+                                          .ToListAsync();
+
+            // Verificar si los productos existen y tienen suficiente stock
+            foreach (var detalleDto in ventaDto.Detalles)
             {
-                return BadRequest("El empleado seleccionado no existe");
-            }
-
-            // Crear la venta
-            var nuevaVenta = new Ventas
-            {
-                Fecha = DateTime.Now,
-                ClienteId = clienteId,
-                EmpleadoId = empleadoId,
-                Total = 0 // Se calculará más adelante
-            };
-
-            _context.Ventas.Add(nuevaVenta);
-            await _context.SaveChangesAsync();
-
-            decimal totalVenta = 0;
-
-            // Procesar los detalles de la venta
-            for (int i = 0; i < productoIds.Count; i++)
-            {
-                var productoId = productoIds[i];
-                var cantidad = cantidades[i];
-
-                var producto = await _context.Productos.FindAsync(productoId);
+                var producto = productos.FirstOrDefault(p => p.Id == detalleDto.ProductoId);
                 if (producto == null)
                 {
-                    return BadRequest($"El producto con ID {productoId} no existe.");
+                    return BadRequest($"Producto con ID {detalleDto.ProductoId} no encontrado.");
                 }
 
-                // Verificar que haya stock suficiente
-                if (producto.Stock < cantidad)
+                if (producto.Stock < detalleDto.Cantidad)
                 {
                     return BadRequest($"No hay suficiente stock para el producto {producto.Nombre}. Stock disponible: {producto.Stock}");
                 }
-
-                // Crear detalle de venta
-                var detalle = new DetalleVenta
-                {
-                    VentaId = nuevaVenta.VentaId,
-                    ProductoId = productoId,
-                    Cantidad = cantidad,
-                    PrecioUnitario = producto.Precio,
-                    Subtotal = cantidad * producto.Precio
-                };
-
-                _context.DetalleVentas.Add(detalle);
-
-                // Actualizar el stock del producto
-                producto.Stock -= cantidad;
-                totalVenta += detalle.Subtotal;
             }
 
-            // Actualizar el total de la venta
-            nuevaVenta.Total = totalVenta;
+            // Crear la nueva venta
+            Ventas nuevaVenta = new Ventas
+            {
+                Fecha = DateTime.Now,
+                ClienteId = ventaDto.ClienteId,
+                EmpleadoId = 1, // Suponiendo que el empleado es estático por ahora
+                Total = ventaDto.Detalles.Sum(d => d.Cantidad * d.PrecioUnitario)
+            };
 
-            await _context.SaveChangesAsync();
+            using (var transaction = await _context.Database.BeginTransactionAsync())
+            {
+                try
+                {
+                    // Crear la venta
+                    _context.Ventas.Add(nuevaVenta);
+                    await _context.SaveChangesAsync();
 
-            return Ok(new { VentaId = nuevaVenta.VentaId });
+                    foreach (DetallesDTO detalleDto in ventaDto.Detalles)
+                    {
+                        var detalle = new DetalleVenta
+                        {
+                            VentaId = nuevaVenta.VentaId,
+                            ProductoId = detalleDto.ProductoId,
+                            Cantidad = detalleDto.Cantidad,
+                            PrecioUnitario = detalleDto.PrecioUnitario,
+                            Subtotal = detalleDto.Cantidad * detalleDto.PrecioUnitario
+                        };
+
+                        _context.DetalleVentas.Add(detalle);
+
+                        // Actualizar stock
+                        var producto = productos.First(p => p.Id == detalleDto.ProductoId);
+                        producto.Stock -= detalleDto.Cantidad;
+                    }
+
+                    // Guardar los cambios en Detalles y Stock actualizado
+                    await _context.SaveChangesAsync();
+
+                    // Commit de la transacción
+                    await transaction.CommitAsync();
+                    return Ok(new { VentaId = nuevaVenta.VentaId });
+                }
+                catch (Exception ex)
+                {
+                    // En caso de error, revertir cambios
+                    await transaction.RollbackAsync();
+                    return StatusCode(500, $"Hubo un problema al procesar la venta: {ex.Message}");
+                }
+            }
         }
+
+
     }
 }
+
