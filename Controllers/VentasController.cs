@@ -81,12 +81,10 @@ namespace POS.Controllers
                 return BadRequest($"El cliente con ID {ventaDto.ClienteId} no existe.");
             }
 
-            // Obtener todos los productos necesarios antes de iniciar la transacción
-            var productos = await _context.Productos
-                                          .Where(p => ventaDto.Detalles.Select(d => d.ProductoId).Contains(p.Id))
-                                          .ToListAsync();
+            // Verificar productos y stock antes de continuar
+            var productosIds = ventaDto.Detalles.Select(d => d.ProductoId).ToList();
+            var productos = await _context.Productos.Where(p => productosIds.Contains(p.Id)).ToListAsync();
 
-            // Verificar si los productos existen y tienen suficiente stock
             foreach (var detalleDto in ventaDto.Detalles)
             {
                 var producto = productos.FirstOrDefault(p => p.Id == detalleDto.ProductoId);
@@ -110,46 +108,14 @@ namespace POS.Controllers
                 Total = ventaDto.Detalles.Sum(d => d.Cantidad * d.PrecioUnitario)
             };
 
-            using (var transaction = await _context.Database.BeginTransactionAsync())
-            {
-                try
-                {
-                    // Crear la venta
-                    _context.Ventas.Add(nuevaVenta);
-                    await _context.SaveChangesAsync();
+            _context.Ventas.Add(nuevaVenta);
+            await _context.SaveChangesAsync(); // Guardamos la venta
 
-                    foreach (DetallesDTO detalleDto in ventaDto.Detalles)
-                    {
-                        var detalle = new DetalleVenta
-                        {
-                            VentaId = nuevaVenta.VentaId,
-                            ProductoId = detalleDto.ProductoId,
-                            Cantidad = detalleDto.Cantidad,
-                            PrecioUnitario = detalleDto.PrecioUnitario,
-                            Subtotal = detalleDto.Cantidad * detalleDto.PrecioUnitario
-                        };
+           
 
-                        _context.DetalleVentas.Add(detalle);
+            // Responder con el ID de la venta creada
+            return Ok(new { VentaId = nuevaVenta.VentaId });
 
-                        // Actualizar stock
-                        var producto = productos.First(p => p.Id == detalleDto.ProductoId);
-                        producto.Stock -= detalleDto.Cantidad;
-                    }
-
-                    // Guardar los cambios en Detalles y Stock actualizado
-                    await _context.SaveChangesAsync();
-
-                    // Commit de la transacción
-                    await transaction.CommitAsync();
-                    return Ok(new { VentaId = nuevaVenta.VentaId });
-                }
-                catch (Exception ex)
-                {
-                    // En caso de error, revertir cambios
-                    await transaction.RollbackAsync();
-                    return StatusCode(500, $"Hubo un problema al procesar la venta: {ex.Message}");
-                }
-            }
         }
 
 

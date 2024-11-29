@@ -16,5 +16,7 @@ namespace POS.Data
         public DbSet<Cliente> Clientes { get; set; }
         public DbSet<Ventas> Ventas { get; set; }
         public DbSet<DetalleVenta> DetalleVentas { get; set; }
+
+        
     }
 }
