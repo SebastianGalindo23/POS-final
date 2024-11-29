@@ -2,6 +2,7 @@
 
 namespace POS.Models
 {
+    [Table("detalle_ventas")]
     public class DetalleVenta
     {
         [Column("detalle_venta_id")]
@@ -18,7 +19,7 @@ namespace POS.Models
         public decimal Subtotal { get; set; }
 
         // Relaciones
-        public Ventas? Venta { get; set; }
-        public Producto? Producto { get; set; }
+        public Ventas Venta { get; set; }
+        public Producto Producto { get; set; }
     }
 }

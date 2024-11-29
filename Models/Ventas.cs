@@ -20,6 +20,6 @@ namespace POS.Models
         // Relaciones
         public Cliente? Cliente { get; set; }
         public Empleado? Empleado { get; set; }
-        public ICollection<DetalleVenta>? DetalleVentas { get; set; }
+        public ICollection<DetalleVenta> DetalleVentas { get; set; }
     }
 }

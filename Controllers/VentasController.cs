@@ -51,7 +51,7 @@ namespace POS.Controllers
                     default:
                         break;
                 }
-            }   
+            }
             ViewBag.Clientes = _context.Clientes.ToList();
             var listaProductos = productos.ToList();
             return View(listaProductos);
@@ -64,61 +64,59 @@ namespace POS.Controllers
             return _context.Ventas.Any(e => e.VentaId == id);
         }
 
-
+        [HttpPost]
         public async Task<IActionResult> CrearVenta([FromBody] VentasDTO ventaDto)
         {
             if (ventaDto == null || ventaDto.Detalles == null || !ventaDto.Detalles.Any())
             {
-                Console.WriteLine("El carrito llegó vacío o es nulo.");
-                return BadRequest("Datos de la venta inválidos.");
+                return BadRequest("Datos de la venta inválidos");
             }
 
-            // Verificación si el ClienteId existe en la base de datos
+            // Verificar si el cliente existe
             var cliente = await _context.Clientes.FindAsync(ventaDto.ClienteId);
             if (cliente == null)
             {
-                Console.WriteLine($"Cliente con ID {ventaDto.ClienteId} no encontrado.");
-                return BadRequest($"El cliente con ID {ventaDto.ClienteId} no existe.");
+                return BadRequest("El cliente seleccionado no existe");
             }
 
-            // Verificar productos y stock antes de continuar
-            var productosIds = ventaDto.Detalles.Select(d => d.ProductoId).ToList();
-            var productos = await _context.Productos.Where(p => productosIds.Contains(p.Id)).ToListAsync();
-
-            foreach (var detalleDto in ventaDto.Detalles)
-            {
-                var producto = productos.FirstOrDefault(p => p.Id == detalleDto.ProductoId);
-                if (producto == null)
-                {
-                    return BadRequest($"Producto con ID {detalleDto.ProductoId} no encontrado.");
-                }
-
-                if (producto.Stock < detalleDto.Cantidad)
-                {
-                    return BadRequest($"No hay suficiente stock para el producto {producto.Nombre}. Stock disponible: {producto.Stock}");
-                }
-            }
-
-            // Crear la nueva venta
+            // Crear la venta
             Ventas nuevaVenta = new Ventas
             {
                 Fecha = DateTime.Now,
                 ClienteId = ventaDto.ClienteId,
                 EmpleadoId = 1, // Suponiendo que el empleado es estático por ahora
-                Total = ventaDto.Detalles.Sum(d => d.Cantidad * d.PrecioUnitario)
+                Total = ventaDto.Detalles.Sum(d => d.Cantidad * d.PrecioUnitario),
             };
+            try
+            {
+                _context.Ventas.Add(nuevaVenta);
+                await _context.SaveChangesAsync();
 
-            _context.Ventas.Add(nuevaVenta);
-            await _context.SaveChangesAsync(); // Guardamos la venta
+                foreach (var detalleDto in ventaDto.Detalles)
+                {
+                    var detalle = new DetalleVenta
+                    {
+                        VentaId = nuevaVenta.VentaId,
+                        ProductoId = detalleDto.ProductoId,
+                        Cantidad = detalleDto.Cantidad,
+                        PrecioUnitario = detalleDto.PrecioUnitario,
+                        Subtotal = detalleDto.Cantidad * detalleDto.PrecioUnitario
+                    };
+                    _context.DetallesVentas.Add(detalle);
+                }
 
-           
+                await _context.SaveChangesAsync();
 
-            // Responder con el ID de la venta creada
-            return Ok(new { VentaId = nuevaVenta.VentaId });
+                return Ok(new { VentaId = nuevaVenta.VentaId });
+            }
+            catch (Exception ex)
+            {
+                
+                return StatusCode(500, new { error = ex.Message, stackTrace = ex.StackTrace, innerException = ex.InnerException?.Message });
+            }
+        } 
 
-        }
 
-
-    }
+    }    
 }
 
