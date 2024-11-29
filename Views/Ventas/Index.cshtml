@@ -141,7 +141,7 @@
             const productoEnCarrito = carrito.find(item => item.id === id);
 
             if (productoEnCarrito) {
-                if (productoEnCarrito.cantidad < stock) {
+                if (productoEnCarrito.cantidad <= stock) {
                     productoEnCarrito.cantidad++;
                 }
                 else {

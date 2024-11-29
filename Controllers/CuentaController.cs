@@ -33,6 +33,7 @@ namespace POS.Controllers
                     var claims = new List<Claim>
                     {
                         new Claim(ClaimTypes.Name, empleado.Nombre),
+                        new Claim("EmpleadoId", empleado.Id.ToString()),
                         new Claim("Usuario", empleado.Usuario),
                         new Claim(ClaimTypes.Role, empleado.Rol),
                         new Claim("UltimaRuta", empleado.Rol == "Admin" ? "/Admin/Index" : "/Ventas/Index")
