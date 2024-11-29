@@ -9,6 +9,7 @@ using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
 using POS.DTO;
+using Document = QuestPDF.Fluent.Document;
 
 
 
@@ -55,6 +56,107 @@ namespace POS.Controllers
             ViewBag.Clientes = _context.Clientes.ToList();
             var listaProductos = productos.ToList();
             return View(listaProductos);
+        }
+
+        public IActionResult ImprimirFactura(long id)
+        {
+            QuestPDF.Settings.License = LicenseType.Community;
+
+            // Obtener la venta junto con los detalles
+            var venta = _context.Ventas
+                .Include(v => v.Cliente)
+                
+                .Include(v => v.DetalleVentas)
+                    .ThenInclude(d => d.Producto)
+                .FirstOrDefault(v => v.VentaId == id);
+
+            if (venta == null)
+            {
+                return NotFound();
+            }
+
+            var monedaGuatemala = new System.Globalization.CultureInfo("es-GT");
+
+            var document = Document.Create(container =>
+            {
+                container.Page(page =>
+                {
+                    page.Size(PageSizes.A4);
+                    page.Margin(1, Unit.Centimetre);
+
+                    page.Header().Row(header =>
+                    {
+                        header.RelativeItem().Text("Factura").FontSize(24).Bold().AlignCenter();
+                    });
+
+                    page.Content().Column(column =>
+                    {
+                        // Información de la venta
+                        column.Item().Row(row =>
+                        {
+                            row.RelativeItem().Text($"Fecha: {venta.Fecha.ToString("dd/MM/yyyy")}");
+                            row.RelativeItem().Text($"No. Factura: {venta.VentaId}");
+                        });
+
+                        column.Item().Row(row =>
+                        {
+                            row.RelativeItem().Text($"Cliente: {venta.Cliente?.Nombre}");
+                            row.RelativeItem().Text($"NIT: {venta.Cliente?.NIT}");
+                        });
+
+
+                        column.Item().PaddingVertical(1, Unit.Centimetre);
+
+                        column.Item().Table(table =>
+                        {
+                            table.ColumnsDefinition(columns =>
+                            {
+                                columns.RelativeColumn();
+                                columns.ConstantColumn(60);
+                                columns.ConstantColumn(100);
+                                columns.ConstantColumn(100);
+                            });
+
+                            table.Header(header =>
+                            {
+                                header.Cell().Element(EstiloCelda).Text("Producto").FontSize(12).Bold();
+                                header.Cell().Element(EstiloCelda).Text("Cantidad").FontSize(12).Bold();
+                                header.Cell().Element(EstiloCelda).Text("Precio Unitario").FontSize(12).Bold();
+                                header.Cell().Element(EstiloCelda).Text("Subtotal").FontSize(12).Bold();
+
+                                static IContainer EstiloCelda(IContainer container)
+                                {
+                                    return container.Background("#e0e0e0").Border(1).BorderColor("#e0e0e0").Padding(5).AlignCenter();
+                                }
+                            });
+
+                            // Agregar los detalles de la venta
+                            foreach (DetalleVenta detalle in venta.DetalleVentas)
+                            {
+                                table.Cell().Border(1).BorderColor("#c0c0c0").Padding(5).Text(detalle.Producto?.Nombre ?? "N/A");
+                                table.Cell().Border(1).BorderColor("#c0c0c0").Padding(5).AlignCenter().Text(detalle.Cantidad.ToString());
+                                table.Cell().Border(1).BorderColor("#c0c0c0").Padding(5).AlignRight().Text(detalle.PrecioUnitario.ToString("C", monedaGuatemala));
+                                table.Cell().Border(1).BorderColor("#c0c0c0").Padding(5).AlignRight().Text((detalle.Cantidad * detalle.PrecioUnitario).ToString("C", monedaGuatemala));
+                            }
+
+                            // Total de la venta
+                            table.Cell().ColumnSpan(3).Background("#f0f0f0").Border(1).BorderColor("#c0c0c0").Padding(5).AlignRight()
+                                .Text("TOTAL").FontSize(12).Bold();
+                            table.Cell().Background("#f0f0f0").Border(1).BorderColor("#c0c0c0").Padding(5).AlignRight()
+                                .Text(venta.Total.ToString("C", monedaGuatemala));
+                        });
+                    });
+
+                    // Pie de página
+                    page.Footer().Text($"USPG POS - 2024 - ").FontSize(10).AlignCenter();
+                });
+            });
+
+            var stream = new MemoryStream();
+            document.GeneratePdf(stream);
+            stream.Position = 0;
+
+            return File(stream, "application/pdf", $"Factura_{id}.pdf");
         }
 
 
