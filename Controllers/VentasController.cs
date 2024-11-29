@@ -182,23 +182,13 @@ namespace POS.Controllers
                 return BadRequest("El cliente seleccionado no existe");
             }
 
-            var empleadoIdClaim = User.FindFirstValue("EmpleadoId");
-            if (empleadoIdClaim == null)
-            {
-                return Unauthorized("Empleado no autenticado o sesión expirada");
-            }
-
-            if (!int.TryParse(empleadoIdClaim, out int empleadoId))
-            {
-                return BadRequest("ID de empleado inválido");
-            }
 
             // Crear la venta
             Ventas nuevaVenta = new Ventas
             {
                 Fecha = DateTime.Now,
                 ClienteId = ventaDto.ClienteId,
-                EmpleadoId = empleadoId, // Suponiendo que el empleado es estático por ahora
+                EmpleadoId = 1,
                 Total = ventaDto.Detalles.Sum(d => d.Cantidad * d.PrecioUnitario),
             };
             try

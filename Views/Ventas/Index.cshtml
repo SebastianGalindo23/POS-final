@@ -40,7 +40,6 @@
                     <label for="cliente" class="form-label">Seleccione al Cliente</label>
                     <select class="form-select" id="cliente" name="clienteId" required>
                         <option value="">Seleccione ...</option>
-                        <option value="CF">Consumidor Final (CF)</option>
                         @foreach (var cliente in ViewBag.Clientes as List<POS.Models.Cliente>)
                         {
                             <option value="@cliente.Id">@cliente.Nombre</option>
@@ -141,17 +140,21 @@
             const productoEnCarrito = carrito.find(item => item.id === id);
 
             if (productoEnCarrito) {
-                if (productoEnCarrito.cantidad <= stock) {
+
+                if (productoEnCarrito.cantidad < stock) {
                     productoEnCarrito.cantidad++;
-                }
-                else {
+                } else {
                     alert('No hay suficiente stock');
                     return;
                 }
             } else {
-                carrito.push({ id, nombre, precio, cantidad: 1 });
+                if (stock > 0) {
+                    carrito.push({ id, nombre, precio, cantidad: 1 });
+            } else {
+                    alert('Este producto no está disponible');
+                    return;
             }
-
+        }
             actualizarCarrito();
         }
     });
@@ -210,6 +213,7 @@
                 const responseJson = await response.json();
                 alert('Venta finalizada con éxito. Código de venta: ' + responseJson.ventaId);
                 window.location.href = `/Ventas/ImprimirFactura/${responseJson.ventaId}`;
+                
             } else {
                 alert('Error al finalizar la compra23.');
             }
