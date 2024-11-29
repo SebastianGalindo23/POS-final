@@ -103,6 +103,24 @@ namespace POS.Controllers
                         Subtotal = detalleDto.Cantidad * detalleDto.PrecioUnitario
                     };
                     _context.DetallesVentas.Add(detalle);
+
+                    var producto = await _context.Productos.FindAsync(detalleDto.ProductoId);
+                    if (producto != null)
+                    {
+                        // Restar la cantidad vendida del stock
+                        if (producto.Stock >= detalleDto.Cantidad)
+                        {
+                            producto.Stock -= detalleDto.Cantidad;
+                        }
+                        else
+                        {
+                            return BadRequest($"No hay suficiente stock para el producto {producto.Nombre}");
+                        }
+                    }
+                    else
+                    {
+                        return BadRequest($"El producto con ID {detalleDto.ProductoId} no existe");
+                    }
                 }
 
                 await _context.SaveChangesAsync();
